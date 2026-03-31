@@ -1,0 +1,16 @@
+# GLM SDK
+zai-sdk
+
+# Data processing
+pandas
+numpy
+tqdm
+
+# For training
+transformers>=4.35.0
+torch>=2.0.0
+scikit-learn
+datasets
+
+# Environment
+python-dotenv
