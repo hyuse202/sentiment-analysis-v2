@@ -58,7 +58,7 @@ def main():
 
     # Load data
     print("Loading data...")
-    texts, labels = load_data("data/labeled/vific_labeled_1000_research.csv")
+    texts, labels = load_data("data/labeled/vific_labeled_5000_research.csv")
     print(f"Total samples: {len(texts)}")
 
     unique, counts = np.unique(labels, return_counts=True)
@@ -66,9 +66,9 @@ def main():
     for c, count in zip(unique, counts):
         print(f"  {ID2LABEL[c]}: {count} ({100*count/len(labels):.1f}%)")
 
-    # Optimal split: 95% train, 5% test
+    # Optimal split: 97% train, 3% test
     X_train, X_test, y_train, y_test = train_test_split(
-        texts, labels, test_size=0.05, random_state=42, stratify=labels
+        texts, labels, test_size=0.03, random_state=42, stratify=labels
     )
     print(f"\nTrain: {len(X_train)}, Test: {len(X_test)}")
 

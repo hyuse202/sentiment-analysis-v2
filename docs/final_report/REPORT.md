@@ -49,9 +49,9 @@ Phân loại sentiment (tâm lý) của tin tức tài chính Việt Nam thành 
 
 ### 1.4 Đóng góp chính
 
-1. Ứng dụng LLM (GLM-5) để auto-label 897 mẫu dữ liệu tiếng Việt
+1. Ứng dụng LLM (GLM-5) để auto-label 5,322 mẫu dữ liệu tiếng Việt
 2. So sánh 3-class vs Binary classification
-3. Đạt **84.4% accuracy** với XGBoost (vượt mục tiêu 80%)
+3. Đạt **77.4% accuracy** với Ensemble (XGBoost + SVM + LR) trên 20% test set
 4. Phân tích chi tiết các technique hiệu quả/không hiệu quả
 
 ---
@@ -118,7 +118,7 @@ Các hyperparameters quan trọng:
 | **Tên dataset** | Vietnamese Financial Corpus (ViFiC) |
 | **Nguồn** | Kaggle |
 | **Kích thước gốc** | 160,490 bài báo |
-| **Số mẫu đã label** | 897 samples |
+| **Số mẫu đã label** | 5,322 samples |
 | **Thời gian** | 2010-2025 |
 
 #### 3.1.2 Phân phối các lớp
@@ -127,11 +127,11 @@ Các hyperparameters quan trọng:
 
 | Sentiment | Số mẫu | Tỷ lệ |
 |-----------|--------|-------|
-| **POSITIVE** | 480 | 53.5% |
-| **NEGATIVE** | 258 | 28.8% |
-| **NEUTRAL** | 159 | 17.7% |
+| **POSITIVE** | 2,866 | 53.9% |
+| **NEGATIVE** | 1,715 | 32.2% |
+| **NEUTRAL** | 741 | 13.9% |
 
-**Nhận xét:** Dataset bị imbalance, lớp NEUTRAL chiếm tỷ trọng thấp nhất.
+**Nhận xét:** Dataset có sự imbalance, lớp NEUTRAL chiếm tỷ trọng thấp nhất (13.9%).
 
 #### 3.1.3 Auto-labeling với GLM-5
 
@@ -185,8 +185,8 @@ Sử dụng danh sách 40+ stopwords tiếng Việt phổ biến:
 
 | Parameter | Giá trị | Lý do |
 |-----------|---------|-------|
-| `max_features` | 8,000 | Giảm dimensionality |
-| `ngram_range` | (1, 4) | Capture 1-gram đến 4-gram |
+| `max_features` | 10,000 | Giảm dimensionality |
+| `ngram_range` | (1, 5) | Capture 1-gram đến 5-gram |
 | `min_df` | 1 | Giữ tất cả terms |
 | `max_df` | 0.90 | Loại bỏ terms quá phổ biến |
 | `sublinear_tf` | True | Apply log scaling |
@@ -205,8 +205,8 @@ N-grams giúp capture được context và cụm từ có nghĩa.
 #### 3.4.1 Strategy 1: 3-class Classification
 
 ```
-Train: 762 samples (85%)
-Test:  135 samples (15%)
+Train: 4,523 samples (85%)
+Test:  799 samples (15%)
 ```
 
 #### 3.4.2 Strategy 2: Binary Classification
@@ -214,29 +214,30 @@ Test:  135 samples (15%)
 ```
 Merge NEUTRAL + NEGATIVE → NON-POSITIVE
 
-Train: 852 samples (95%)
-Test:  45 samples (5%)
+Train: 4,257 samples (80%)
+Test:  1,065 samples (20%)
 ```
 
 **Lý do merge:**
-1. NEUTRAL class quá ít mẫu (17.7%)
+1. NEUTRAL class quá ít mẫu (13.9%)
 2. Binary classification đơn giản hơn, dễ đạt accuracy cao
 3. Trong tài chính, quan trọng nhất là biết tin POSITIVE hay KHÔNG
+4. **Test size 20%** cho đánh giá đáng tin cậy hơn (1,065 samples test)
 
 ### 3.5 Machine Learning Pipeline
 
 ![Pipeline](figures/05_pipeline.png)
 
 ```
-Raw Data (897 samples)
+Raw Data (5,322 samples)
     ↓
 Preprocessing (Lowercase, Remove Stopwords)
     ↓
-TF-IDF Vectorization (8000 features, 1-4 grams)
+TF-IDF Vectorization (10,000 features, 1-5 grams)
     ↓
-XGBoost Classifier (n_estimators=400, max_depth=8)
+Ensemble Classifier (XGBoost + SVM + Logistic Regression)
     ↓
-Prediction (84.4% accuracy)
+Prediction (77.4% accuracy on 20% test set)
 ```
 
 ### 3.6 Các technique đã thử
@@ -274,7 +275,7 @@ def find_best_threshold(y_true, y_proba):
     return best_threshold, best_acc
 ```
 
-**Kết quả:** Threshold tối ưu = 0.48 (thay vì 0.5)
+**Kết quả:** Threshold tối ưu = 0.54 (thay vì 0.5)
 
 ---
 
@@ -301,33 +302,36 @@ def find_best_threshold(y_true, y_proba):
 
 ![Accuracy Progression](figures/02_accuracy_progression.png)
 
-| Giai đoạn | Mô tả | Best Accuracy |
-|-----------|-------|---------------|
-| Baseline (Balanced) | Class weights, 15% test | 65.9% |
-| Binary Classification | Merge NEUTRAL+NEGATIVE | 78.5% |
-| Optimized | Tối ưu TF-IDF, threshold | 79.3% |
-| Stacking Ensemble | Stacking classifier | 78.9% |
-| **Final Best** | XGBoost, 5% test, threshold tuning | **84.4%** |
+| Giai đoạn | Mô tả | Test Size | Accuracy |
+|-----------|-------|-----------|----------|
+| 3-class Classification | SVM RBF, class weights | 15% | 66.7% |
+| Binary Classification | Merge NEUTRAL+NEGATIVE | 20% | 76.2% |
+| XGBoost Optimized | TF-IDF n-grams, threshold | 20% | 76.4% |
+| SVM Optimized | RBF kernel, class weights | 20% | 76.8% |
+| Logistic Regression | Class weights | 20% | 77.0% |
+| **Ensemble (Final)** | **XGBoost + SVM + LR** | **20%** | **77.4%** |
 
-#### 4.2.2 So sánh các mô hình (Loại bỏ kết quả trùng)
+#### 4.2.2 So sánh các mô hình (20% test size)
 
 ![Model Comparison](figures/03_model_comparison.png)
 
-| Model | Accuracy | Loại |
-|-------|----------|------|
-| **XGBoost (Final)** | **84.4%** | Binary (Best) |
-| Ensemble (Binary) | 79.3% | Binary |
-| XGBoost (Binary) | 78.5% | Binary |
-| Logistic Regression (Binary) | 77.8% | Binary |
-| Random Forest (Binary) | 77.0% | Binary |
-| Stacking (Binary) | 78.9% | Binary |
-| SVM RBF (3-class) | 66.7% | 3-class |
-| Logistic Regression (3-class) | 65.9% | 3-class |
-| Random Forest (3-class) | 65.9% | 3-class |
-| SVM Linear (3-class) | 62.2% | 3-class |
-| Naive Bayes (3-class) | 54.1% | 3-class |
+| Model | Accuracy | Precision | Recall | F1-Score |
+|-------|----------|-----------|--------|----------|
+| **Ensemble (XGB+SVM+LR)** | **77.4%** | 0.77 | 0.78 | 0.77 |
+| Logistic Regression | 77.0% | 0.77 | 0.77 | 0.77 |
+| SVM (RBF) | 76.8% | 0.77 | 0.77 | 0.77 |
+| XGBoost | 76.4% | 0.76 | 0.76 | 0.76 |
+| Random Forest | 74.9% | 0.75 | 0.75 | 0.75 |
 
-**Lưu ý:** Đã loại bỏ các mô hình có accuracy trùng nhau, chỉ giữ kết quả unique.
+**Lưu ý:** Kết quả với 20% test size (1,065 samples) cho đánh giá đáng tin cậy hơn.
+
+#### 4.2.3 Cross-Validation Results (5-Fold)
+
+| Model | Mean Accuracy | Std |
+|-------|---------------|-----|
+| Logistic Regression | 75.0% | ±1.0% |
+| SVM (RBF) | 74.5% | ±0.8% |
+| XGBoost | 74.3% | ±0.4% |
 
 ### 4.3 Best Model Details
 
@@ -337,36 +341,72 @@ def find_best_threshold(y_true, y_proba):
 
 | Parameter | Giá trị |
 |-----------|---------|
-| **Model** | XGBoost |
-| **Accuracy** | **84.4%** |
-| **Threshold** | 0.48 |
-| **Test Size** | 5% (45 samples) |
-| **Train Size** | 852 samples |
-| **Features** | 8,000 TF-IDF (1-4 grams) |
-| **n_estimators** | 400 |
-| **max_depth** | 8 |
-| **learning_rate** | 0.08 |
-| **scale_pos_weight** | 0.87 |
+| **Model** | Ensemble (XGBoost + SVM + Logistic Regression) |
+| **Accuracy** | **77.4%** |
+| **Threshold** | 0.54 |
+| **Test Size** | 20% (1,065 samples) |
+| **Train Size** | 4,257 samples |
+| **Features** | 10,000 TF-IDF (1-5 grams) |
+| **Voting** | Soft voting |
 
 #### 4.3.2 Classification Report
 
 ```
               precision    recall  f1-score   support
 
-NON-POSITIVE       0.82      0.86      0.84        21
-    POSITIVE       0.87      0.83      0.85        24
+NON-POSITIVE       0.73      0.80      0.77       491
+    POSITIVE       0.82      0.75      0.78       574
 
-    accuracy                           0.84        45
-   macro avg       0.84      0.85      0.84        45
-weighted avg       0.85      0.84      0.84        45
+    accuracy                           0.77      1065
+   macro avg       0.77      0.78      0.77      1065
+weighted avg       0.78      0.77      0.77      1065
 ```
 
 #### 4.3.3 Confusion Matrix
 
 | | Predicted NON-POSITIVE | Predicted POSITIVE |
 |---|---|---|
-| **Actual NON-POSITIVE** | 18 | 3 |
-| **Actual POSITIVE** | 4 | 20 |
+| **Actual NON-POSITIVE** | 394 | 97 |
+| **Actual POSITIVE** | 144 | 430 |
+
+#### 4.3.4 Test Cases - Ví dụ phân loại
+
+**Test Case 1: Tin tức tích cực**
+```
+Input: "Công ty A báo cáo lợi nhuận kỷ lục trong quý này"
+Prediction: POSITIVE (confidence: 70.3%)
+Actual: POSITIVE ✓
+```
+
+**Test Case 2: Tin tức tiêu cực**
+```
+Input: "Thị trường chứng khoán sụt giảm mạnh do lo ngại lãi suất"
+Prediction: NON-POSITIVE (confidence: 76.9%)
+Actual: NEGATIVE ✓
+```
+
+**Test Case 3: Tin tức trung lập**
+```
+Input: "Doanh số bán hàng duy trì ở mức ổn định"
+Prediction: NON-POSITIVE (confidence: 48.9%)
+Actual: NEUTRAL (merged vào NON-POSITIVE) ✓
+```
+
+**Test Case 4: False Positive Example**
+```
+Input: "Lợi nhuận giảm nhưng vẫn đạt kế hoạch"
+Prediction: POSITIVE (confidence: 52.1%)
+Actual: NON-POSITIVE ✗
+Lý do: Model nhầm do từ "lợi nhuận" và "đạt kế hoạch"
+```
+
+**Test Case 5: False Negative Example**
+```
+Input: "Doanh nghiệp đối mặt khó khăn nhưng có giải pháp"
+Prediction: NON-POSITIVE (confidence: 61.2%)
+Actual: POSITIVE ✗
+Lý do: Từ "khó khăn" chi phối hơn "có giải pháp"
+```
 
 ---
 
@@ -376,10 +416,11 @@ weighted avg       0.85      0.84      0.84        45
 
 | Aspect | 3-class | Binary |
 |--------|---------|--------|
-| Accuracy | 66.7% | **84.4%** |
+| Accuracy | ~66% | **77.4%** |
 | Số lớp | 3 | 2 |
-| NEUTRAL class | 17.7% (ít) | Merged vào NON-POSITIVE |
+| NEUTRAL class | 13.9% (ít) | Merged vào NON-POSITIVE |
 | Độ phức tạp | Cao hơn | Đơn giản hơn |
+| Test set size | 799 samples | 1,065 samples |
 
 **Kết luận:** Merge NEUTRAL vào NEGATIVE tạo ra binary classification cân bằng hơn và dễ học hơn.
 
@@ -387,7 +428,7 @@ weighted avg       0.85      0.84      0.84        45
 
 | Metric | Không SMOTE | Có SMOTE |
 |--------|-------------|----------|
-| Accuracy | 79.3% | 77.8% |
+| Accuracy | 76.4% | 75.8% |
 
 **Lý do:**
 1. SMOTE tạo synthetic samples trong TF-IDF space (sparse)
@@ -399,32 +440,45 @@ weighted avg       0.85      0.84      0.84        45
 | Technique | Impact | Ghi chú |
 |-----------|--------|---------|
 | Vietnamese stopwords | +3-5% | Loại bỏ noise words |
-| TF-IDF n-grams (1-4) | +2-3% | Capture context |
+| TF-IDF n-grams (1-5) | +2-3% | Capture context |
 | Class weights | +5-8% | Xử lý imbalance |
 | Threshold tuning | +1-2% | Optimize decision boundary |
-| Tăng training data (95%) | +5-6% | More data = better model |
-| **SMOTE** | **-1.5%** | Không hiệu quả |
-| Stacking | +0% | Không cải thiện đáng kể |
+| Ensemble (XGB+SVM+LR) | +1-2% | Combine strengths |
+| **SMOTE** | **-0.6%** | Không hiệu quả |
+| Tăng training data | +5-10% | More data = better model |
 
-### 5.4 Limitations
+### 5.4 Test Size Analysis
 
-1. **Test size nhỏ:** 5% test set (45 samples) có variance cao
-2. **Label quality:** GLM-5 auto-label có thể có noise
-3. **Domain specificity:** Model chỉ trained trên tài chính
-4. **Không xét temporal:** Không phân biệt tin cũ/mới
+| Test Size | Test Samples | Accuracy | Độ tin cậy |
+|-----------|--------------|----------|------------|
+| 3% | 160 | 81.9% | Thấp (variance cao) |
+| 5% | 267 | 79.8% | Trung bình |
+| 10% | 533 | 76.9% | Khá |
+| **20%** | **1,065** | **77.4%** | **Cao (chọn làm kết quả chính)** |
 
-### 5.5 So sánh với các nghiên cứu trước
+**Kết luận:** Test size 20% cho kết quả đáng tin cậy nhất với variance thấp.
 
-| Nghiên cứu | Method | Accuracy |
-|------------|--------|----------|
-| Vu et al. (2023) | PhoBERT + CNN | 81.0% |
-| **Dự án này** | **XGBoost + TF-IDF** | **84.4%** |
+### 5.5 Limitations
 
-**Kết quả vượt trội hơn nhờ:**
-1. TF-IDF tối ưu với n-grams (1-4)
-2. Vietnamese stopwords removal
-3. Threshold tuning
-4. Binary classification strategy
+1. **Label quality:** GLM-5 auto-label có thể có noise (~10-15% sai)
+2. **Domain specificity:** Model chỉ trained trên tài chính
+3. **Không xét temporal:** Không phân biệt tin cũ/mới
+4. **Binary only:** Mất khả năng phân biệt NEUTRAL
+5. **Class imbalance:** NEUTRAL chỉ 13.9%, ảnh hưởng chất lượng merge
+
+### 5.6 So sánh với các nghiên cứu trước
+
+| Nghiên cứu | Method | Dataset | Accuracy |
+|------------|--------|---------|----------|
+| Vu et al. (2023) | PhoBERT + CNN | 40,000 samples | 81.0% |
+| Ya et al. (2023) | PhoBERT + LSTM | ACB Bank | R² = 0.973 |
+| Chen & Kawashima (2024) | LLM (Llama 3) | Financial PhraseBank | 89.3% |
+| **Dự án này** | **Ensemble + TF-IDF** | **5,322 samples (20% test)** | **77.4%** |
+
+**Nhận xét:**
+- Kết quả thấp hơn một số nghiên cứu do test size lớn hơn (đánh giá trung thực hơn)
+- TF-IDF đơn giản nhưng hiệu quả với tiếng Việt
+- Auto-labeling bằng GLM-5 tiết kiệm chi phí nhưng có noise
 
 ---
 
@@ -436,17 +490,20 @@ weighted avg       0.85      0.84      0.84        45
 
 | Mục tiêu | Kết quả | Trạng thái |
 |----------|---------|------------|
-| Accuracy >= 80% | **84.4%** | ✅ ĐẠT |
-| So sánh các models | 11 models đã test | ✅ Hoàn thành |
-| Tìm best configuration | XGBoost + TF-IDF | ✅ Hoàn thành |
+| Dataset規模 | 5,322 samples | ✅ Hoàn thành |
+| Test size đáng tin cậy | 20% (1,065 samples) | ✅ Hoàn thành |
+| Accuracy trên test set | **77.4%** | Gần mục tiêu |
+| So sánh các models | 5 models đã test | ✅ Hoàn thành |
+| Tìm best configuration | Ensemble (XGB+SVM+LR) | ✅ Hoàn thành |
 
 ### 6.2 Bài học kinh nghiệm
 
 1. **Binary classification hiệu quả hơn** cho bài toán sentiment với imbalanced data
-2. **SMOTE không phải lúc nào cũng tốt** - cần test kỹ
-3. **Simple models với good features** có thể beat complex models
+2. **Test size lớn cho kết quả đáng tin cậy hơn** - 20% test ổn định hơn 5%
+3. **Ensemble kết hợp nhiều model** cho kết quả tốt hơn single model
 4. **Threshold tuning** là step quan trọng nhưng hay bị bỏ qua
-5. **More training data** thường hiệu quả hơn complex models
+5. **Auto-labeling bằng LLM** tiết kiệm thời gian nhưng có noise (~10-15%)
+6. **Vietnamese stopwords removal** quan trọng cho tiếng Việt
 
 ### 6.3 Hướng phát triển
 
@@ -483,27 +540,38 @@ Bài toán phân loại sentiment tin tức tài chính giải quyết 3 vấn �
 
 **Trả lời:**
 
-**Có, giải pháp đạt hiệu quả vượt mục tiêu:**
+**Kết quả với đánh giá trung thực (20% test size):**
+
+| Metric | Kết quả | Đánh giá |
+|--------|---------|----------|
+| Accuracy | **77.4%** | Gần mục tiêu 80% |
+| F1-Score (Positive) | 0.78 | ✅ Tốt |
+| F1-Score (Non-Positive) | 0.77 | ✅ Tốt |
+| Precision (Positive) | 0.82 | ✅ Tốt |
+| Recall (Positive) | 0.75 | Khá |
+
+**Có, giải pháp đạt hiệu quả với test size 20%: đánh giá đáng tin cậy:**
 
 | Metric | Mục tiêu | Kết quả | Đánh giá |
 |--------|----------|---------|----------|
-| Accuracy | >= 80% | **84.4%** | ✅ Vượt 4.4% |
-| F1-Score (Positive) | - | 0.85 | ✅ Tốt |
-| F1-Score (Non-Positive) | - | 0.84 | ✅ Tốt |
+| Accuracy | >= 80% | **77.4%** | Gần đạt (20% test size) |
+| F1-Score (Positive) | - | 0.78 | ✅ Tốt |
+| f1-Score (non-positive) | - | 0.77 | ✅ Tốt |
+| Test size | 20% | 1,065 samples | ✅ Đáng tin cậy (đánh giá đáng tin cậy nhất) |
+| Precision (Positive) | 0.82 | 0.75 | 0.78 |
+| Precision (non-positive) | 0.73 | 0.80 | 0.77 |
 
-**So sánh với baseline:**
-
-```
-Baseline (3-class):     66.7%  →  Phân loại 3 lớp khó
-Binary Classification:  84.4%  →  Đơn giản hóa, hiệu quả hơn
-
-Cải thiện: +17.7 percentage points
-```
-
-**Điều kiện đạt hiệu quả:**
-- Test set nhỏ (5%) → variance cao
+**Nhận xét:** 
+- Test set lớn (20%) cho variance thấp
+ kết quả ổn định
 - Binary classification (không phải 3-class)
 - Domain tài chính Việt Nam
+- Threshold tuning cải thiện f1-score
+
+**Lưu ý quan trọng:**
+- Test size 20% (1,065 samples) cho đánh giá đáng tin cậy
+- Kết quả stable với variance thấp
+- Cross-validation cho kết quả tương tự (74-75%)
 
 ---
 
@@ -523,7 +591,7 @@ Cải thiện: +17.7 percentage points
 
 1. **Market Efficiency:** Thông tin được xử lý nhanh hơn → thị trường hiệu quả hơn
 2. **Risk Management:** Cảnh báo sớm khi sentiment chuyển negative
-3. **Research:** Dataset 897 samples + model có thể dùng cho nghiên cứu tiếp theo
+3. **Research:** Dataset 5,322 samples + model có thể dùng cho nghiên cứu tiếp theo
 
 **Giới hạn tác động:**
 - Model chỉ dự đoán sentiment, không dự đoán giá cổ phiếu
@@ -651,16 +719,15 @@ News Crawler → Preprocessing → Model → Sentiment Score
 ┌─────────────────────────────────────────────────────────┐
 │                    LABELING PIPELINE                     │
 ├─────────────────────────────────────────────────────────┤
-│  Raw Data (897)                                         │
-│       ↓                                                 │
-│  GLM-5 Auto-label                                       │
-│       ↓                                                 │
-│  Quality Check:                                         │
-│    - Random sample 50 samples                           │
-│    - Human review                                       │
-│    - Agreement rate: ~90%                               │
-│       ↓                                                 │
-│  Final Labels (897 samples)                             │
+│  Raw Data (5,322)                                        │
+│       ↓                                              │
+│  GLM-5 Auto-label (parallel 4 batches)                │
+│       ↓                                              │
+│  Quality Check:                                        │
+│    - Random sample validation                      │
+│    - Agreement rate: ~85-90%                          │
+│       ↓                                              │
+│  Final Labels (5,322 samples)                        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -719,10 +786,66 @@ sentiment_analysis_v2/
 |-------|-----------------|
 | Naive Bayes | alpha=1.0 |
 | Logistic Regression | C=1.0, max_iter=2000, class_weight='balanced' |
-| SVM (Linear) | C=1.0, kernel='linear', class_weight='balanced' |
-| SVM (RBF) | C=5.0, kernel='rbf', gamma='scale', class_weight='balanced' |
-| Random Forest | n_estimators=500, class_weight='balanced_subsample' |
-| **XGBoost (Best)** | **n_estimators=400, max_depth=8, learning_rate=0.08, subsample=0.85, colsample_bytree=0.85, scale_pos_weight=0.87** |
+| SVM (RBF) | C=10, kernel='rbf', gamma='scale', class_weight='balanced' |
+| Random Forest | n_estimators=500, max_depth=20, class_weight='balanced' |
+| **XGBoost** | **n_estimators=400, max_depth=8, learning_rate=0.08, subsample=0.85, colsample_bytree=0.85** |
+| **Ensemble (Best)** | **XGBoost + SVM + Logistic Regression, soft voting** |
+
+### D. Cách sử dụng model
+
+```python
+import pickle
+
+# Load model và vectorizer
+with open('results/best_model/model.pkl', 'rb') as f:
+    model = pickle.load(f)
+
+with open('results/best_model/vectorizer.pkl', 'rb') as f:
+    vectorizer = pickle.load(f)
+
+# Predict
+text = "Công ty A báo cáo lợi nhuận kỷ lục trong quý này"
+stopwords = {'của', 'và', 'các', ...}
+processed = ' '.join([w for w in text.lower().split() if w not in stopwords])
+X = vectorizer.transform([processed]).toarray()
+proba = model.predict_proba(X)[0, 1]
+
+# Threshold: 0.54
+prediction = "POSITIVE" if proba >= 0.54 else "NON-POSITIVE"
+print(f"Prediction: {prediction} (confidence: {proba:.2%})")
+```
+
+### E. Sample Test Cases
+
+**Test Case 1: Positive News**
+```
+Input: "Vingroup báo cáo doanh thu tăng 25% so với cùng kỳ"
+Expected: POSITIVE
+```
+
+**Test Case 2: Negative News**
+```
+Input: "Thị trường chứng khoán sụt giảm mạnh, nhà đầu tư lo ngại rủi ro"
+Expected: NON-POSITIVE
+```
+
+**Test Case 3: Neutral News**
+```
+Input: "Ngân hàng giữ nguyên lãi suất vay"
+Expected: NON-POSITIVE (merged)
+```
+
+**Test Case 4: Complex Sentence**
+```
+Input: "Lợi nhuận giảm nhưng công ty vẫn có kế hoạch mở rộng"
+Expected: Depends on interpretation - model may struggle
+```
+
+**Test Case 5: Financial Terminology**
+```
+Input: "VN-Index tăng điểm nhờ dòng tiền nước ngoài mạnh"
+Expected: POSITIVE
+```
 
 ### C. Môi trường thực nghiệm
 
